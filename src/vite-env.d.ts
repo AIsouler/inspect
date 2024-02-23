@@ -13,3 +13,9 @@ declare module 'virtual:commit' {
   const latestLog: DefaultLogFields & ListLogLine;
   export default latestLog;
 }
+
+declare module '*.vue' {
+  import type { DefineComponent } from 'vue';
+  const component: DefineComponent<{}, {}, any>;
+  export default component;
+}
