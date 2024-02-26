@@ -227,6 +227,9 @@ const actionOptions: {
   label: string;
 }[] = [
   {
+    label: '仅查询',
+  },
+  {
     value: 'click',
     label: 'click',
   },
@@ -254,14 +257,11 @@ const actionOptions: {
     value: 'longClickCenter',
     label: 'longClickCenter',
   },
-  {
-    label: '仅查询',
-  },
 ];
 const clickAction = shallowReactive({
   selector: ``,
   selectorValid: false,
-  action: actionOptions[0].value,
+  action: 'click',
   quickFind: false,
 });
 const checkSelectorValid = useDebounceFn(() => {

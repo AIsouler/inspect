@@ -11,6 +11,7 @@ import ErrorDlg from './components/ErrorDlg.vue';
 </template>
 <style lang="scss">
 :root {
+  --gkd-width: max(1200px, 100vw);
   --gkd-height: max(700px, 100vh);
 }
 #app {
@@ -21,10 +22,16 @@ import ErrorDlg from './components/ErrorDlg.vue';
   width: 100vw;
   height: 100vh;
   &.mobile {
+    --gkd-width: 100vw;
     min-width: auto;
   }
 }
 .gkd_code {
   font-family: v-mono, SFMono-Regular, Menlo, Consolas, Courier, monospace !important;
+}
+
+[direction-rtl],
+.direction-rtl {
+  direction: rtl;
 }
 </style>
