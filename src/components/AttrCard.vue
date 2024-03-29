@@ -53,11 +53,12 @@ const lenAttrNames = [`text`, `desc`];
 const attrs = computed(() => {
   return Object.entries(props.focusNode.attr)
     .map(([name, value]) => {
+      const show = attrTip[name]?.show;
       const attr = {
         name,
         value,
         desc: JSON.stringify(value),
-        tip: attrTip[name]?.show?.() ? attrTip[name] : undefined,
+        tip: (show ? show() : true) ? attrTip[name] : undefined,
       };
       if (lenAttrNames.includes(name)) {
         return [
@@ -77,7 +78,11 @@ const attrs = computed(() => {
 </script>
 
 <template>
-  <DraggableCard :initialValue="{ top: 75, right: 10 }" v-slot="{ onRef }">
+  <DraggableCard
+    :initialValue="{ top: 75, right: 10 }"
+    v-slot="{ onRef }"
+    class="box-shadow-dim"
+  >
     <NTable
       size="small"
       striped

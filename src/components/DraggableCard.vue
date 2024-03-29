@@ -9,6 +9,7 @@ const props = withDefaults(
       top?: number;
       bottom?: number;
     };
+    disabled?: boolean;
   }>(),
   { initialValue: () => ({}) },
 );
@@ -90,14 +91,14 @@ onUnmounted(() => {
   endMove();
 });
 
-watch(target, (newValue, oldvalue) => {
+watch(target, (newValue, oldValue) => {
   if (newValue) {
     newValue.addEventListener('pointerdown', startMove);
     newValue.addEventListener('pointerup', endMove);
   }
-  if (oldvalue) {
-    oldvalue.removeEventListener('pointerdown', startMove);
-    oldvalue.removeEventListener('pointerup', endMove);
+  if (oldValue) {
+    oldValue.removeEventListener('pointerdown', startMove);
+    oldValue.removeEventListener('pointerup', endMove);
   }
 });
 onUnmounted(() => {
@@ -114,7 +115,7 @@ const updateTarget = (arg: unknown) => {
 };
 </script>
 <template>
-  <Teleport to="#app">
+  <Teleport to="#app" :disabled="disabled">
     <div
       fixed
       ref="box"

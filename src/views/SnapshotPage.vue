@@ -11,6 +11,7 @@ import {
   snapshotStorage,
   screenshotStorage,
   githubZipStorage,
+  settingsStorage,
 } from '@/utils/storage';
 import type { RawNode, Snapshot } from '@/utils/types';
 import { computed, shallowRef, watchEffect } from 'vue';
@@ -18,9 +19,15 @@ import { useRoute, useRouter } from 'vue-router';
 import { useTitle } from '@vueuse/core';
 import { gmOk } from '@/utils/gm';
 import { exportSnapshotAsJpgUrl, exportSnapshotAsZipUrl } from '@/utils/export';
-import TrackGraph from '@/components/TrackGraph.vue';
 import type { Selector } from '@/utils/selector';
 import { NModal, NIcon } from 'naive-ui';
+import MultiFocusCard from '@/components/MultiFocusCard.vue';
+import { watch, defineAsyncComponent } from 'vue';
+const AsyncTrackGraph = (() => {
+  const loader = () => import('@/components/TrackGraph.vue');
+  setTimeout(loader, 3000);
+  return defineAsyncComponent(loader);
+})();
 
 const route = useRoute();
 const router = useRouter();
@@ -44,7 +51,7 @@ watchEffect(async () => {
     message.error(`快照数据缺失`);
     return;
   }
-  if (gmOk()) {
+  if (gmOk() && settingsStorage.autoUploadImport) {
     // 静默生成 jpg/zip
     setTimeout(async () => {
       exportSnapshotAsJpgUrl(localSnapshot);
@@ -104,6 +111,20 @@ watchEffect(() => {
     trackVisible.value = true;
   }
 });
+const multiFocus = shallowRef<{
+  nodes: RawNode[];
+  position: { x: number; y: number };
+}>();
+watch(
+  () => focusNode.value,
+  (newNode) => {
+    const nodes = multiFocus.value?.nodes;
+    if (!nodes) return;
+    if (!newNode || !nodes.includes(newNode)) {
+      multiFocus.value = undefined;
+    }
+  },
+);
 </script>
 <template>
   <div h-full flex gap-5px p-5px box-border>
@@ -117,6 +138,7 @@ watchEffect(() => {
         focusNode = $event;
         focusCount++;
       "
+      @updateFocusNodes="multiFocus = $event"
     />
     <WindowCard
       v-if="snapshot && rootNode"
@@ -139,11 +161,21 @@ watchEffect(() => {
       v-if="rootNode && snapshot"
       :snapshot="snapshot"
       :rootNode="rootNode"
+      :focusNode="focusNode"
       @updateFocusNode="
         focusNode = $event;
         focusCount++;
       "
       @updateTrack="track = $event"
+    />
+    <MultiFocusCard
+      :focusNode="focusNode"
+      :focusNodes="multiFocus"
+      @updateFocusNode="
+        focusNode = $event;
+        focusCount++;
+      "
+      @close="multiFocus = undefined"
     />
     <NModal
       v-model:show="trackVisible"
@@ -165,7 +197,7 @@ watchEffect(() => {
       <div v-if="track" class="gkd_code py-2px px-4px rounded-2px bg-[#eee]">
         {{ track.selector.toString() }}
       </div>
-      <TrackGraph v-if="track" :track="track" />
+      <AsyncTrackGraph v-if="track" :track="track" />
       <div opacity-75 text-12px>*为简化视图已隐藏部分节点</div>
     </NModal>
   </div>

@@ -117,7 +117,7 @@ const {
   ctimeCol,
   appVersionCodeCol,
   appVersionNameCol,
-  reseColWidth,
+  resetColWidth,
 } = useSnapshotColumns();
 const handleSorterChange = (sorter: SortState) => {
   if (sorter.columnKey == ctimeCol.key) {
@@ -184,7 +184,7 @@ const pagination = shallowReactive<PaginationProps>({
     pagination.page = 1;
   },
 });
-watch(pagination, reseColWidth);
+watch(pagination, resetColWidth);
 
 const showSubsModel = shallowRef(false);
 const subsText = shallowRef(``);
@@ -228,6 +228,7 @@ const actionOptions: {
 }[] = [
   {
     label: '仅查询',
+    value: undefined,
   },
   {
     value: 'click',
