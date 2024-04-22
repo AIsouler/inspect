@@ -1,32 +1,35 @@
 <script setup lang="ts">
-import dayjs from 'dayjs';
 import { message } from '@/utils/discrete';
 import { errorTry, errorWrap } from '@/utils/error';
-import { parseSelector } from '@/utils/selector';
+import { getNodeLabel } from '@/utils/node';
+import { buildEmptyFn, copy } from '@/utils/others';
 import type { Selector } from '@/utils/selector';
+import { parseSelector, wasmLoadTask } from '@/utils/selector';
+import { githubJpgStorage, githubZipStorage } from '@/utils/storage';
 import type { RawNode, Snapshot } from '@/utils/types';
+import { githubUrlToSelfUrl } from '@/utils/url';
+import dayjs from 'dayjs';
+import JSON5 from 'json5';
 import {
   NButton,
   NButtonGroup,
   NCollapse,
   NCollapseItem,
+  NIcon,
   NInput,
   NInputGroup,
   NRadio,
   NRadioGroup,
   NSpace,
-  NIcon,
 } from 'naive-ui';
-import { shallowReactive, shallowRef } from 'vue';
+import * as base64url from 'universal-base64url';
+import { computed, onMounted, shallowReactive, shallowRef } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import DraggableCard from './DraggableCard.vue';
-import { getNodeLabel } from '@/utils/node';
-import { buildEmptyFn, copy } from '@/utils/others';
-import { githubJpgStorage, githubZipStorage } from '@/utils/storage';
-import { githubUrlToSelfUrl } from '@/utils/url';
-import JSON5 from 'json5';
-import { useRouter } from 'vue-router';
+import { gkdWidth, vw } from '@/utils/size';
 
 const router = useRouter();
+const route = useRoute();
 
 const props = withDefaults(
   defineProps<{
@@ -43,91 +46,118 @@ const props = withDefaults(
 );
 
 const selectorText = shallowRef(``);
-const selectorResults = shallowReactive<
-  (
-    | {
-        key: number;
-        selector: string;
-        nodes: RawNode[];
-      }
-    | {
-        key: number;
-        selector: Selector;
-        nodes: RawNode[][];
-      }
-  )[]
->([]);
+type SearchResult =
+  | {
+      key: number;
+      selector: string;
+      nodes: RawNode[];
+    }
+  | {
+      key: number;
+      selector: Selector;
+      nodes: RawNode[][];
+    };
+const selectorResults = shallowReactive<SearchResult[]>([]);
 const expandedKeys = shallowRef<number[]>([]);
-const searchBySelector = errorTry(() => {
-  if (!props.rootNode) {
-    message.error(`根节点不存在`);
+const searchSelector = (text: string) => {
+  const selector = errorWrap(
+    () => parseSelector(text),
+    (e) => {
+      if (typeof e == 'string') {
+        return e;
+      }
+      return `非法选择器`;
+    },
+  );
+  if (
+    selectorResults.find(
+      (s) =>
+        typeof s.selector == 'object' &&
+        s.selector.toString() == selector.toString(),
+    )
+  ) {
+    message.warning(`不可重复选择`);
     return;
   }
-  const text = selectorText.value.trim();
-  if (!text) return;
 
-  if (enableSearchBySelector.value) {
-    const selector = errorWrap(
-      () => parseSelector(text),
-      (e) => {
-        if (typeof e == 'string') {
-          return e;
-        }
-        return `非法选择器`;
-      },
-    );
-    if (
-      selectorResults.find(
-        (s) =>
-          typeof s.selector == 'object' &&
-          s.selector.toString() == selector.toString(),
-      )
-    ) {
-      message.warning(`不可重复选择`);
-      return;
+  const results = selector.querySelectorTrackAll(props.rootNode);
+  if (results.length == 0) {
+    message.success(`没有选择到节点`);
+    return;
+  }
+  message.success(`选择到 ${results.length} 个节点`);
+  selectorResults.unshift({ selector, nodes: results, key: Date.now() });
+  return results.length;
+};
+const searchString = (text: string) => {
+  if (
+    selectorResults.find(
+      (s) => typeof s.selector == 'string' && s.selector.toString() == text,
+    )
+  ) {
+    message.warning(`不可重复搜索`);
+    return;
+  }
+  const results: RawNode[] = [];
+  const stack: RawNode[] = [props.rootNode];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    if (getNodeLabel(n).includes(text)) {
+      results.push(n);
     }
+    stack.push(...[...n.children].reverse());
+  }
+  if (results.length == 0) {
+    message.success(`没有搜索到节点`);
+    return;
+  }
+  message.success(`搜索到 ${results.length} 个节点`);
+  selectorResults.unshift({
+    selector: text,
+    nodes: results,
+    key: Date.now(),
+  });
+  return results.length;
+};
+const refreshExpandedKeys = () => {
+  const newResult = selectorResults[0];
 
-    const results = selector.querySelectorTrackAll(props.rootNode);
-    if (results.length == 0) {
-      message.success(`没有选择到节点`);
-      return;
-    }
-    message.success(`选择到 ${results.length} 个节点`);
-    selectorResults.unshift({ selector, nodes: results, key: Date.now() });
-  } else {
-    if (
-      selectorResults.find(
-        (s) => typeof s.selector == 'string' && s.selector.toString() == text,
-      )
-    ) {
-      message.warning(`不可重复选择`);
-      return;
-    }
-    const results: RawNode[] = [];
-    const stack: RawNode[] = [props.rootNode];
-    while (stack.length > 0) {
-      const n = stack.pop()!;
-      if (getNodeLabel(n).includes(text)) {
-        results.push(n);
-      }
-      stack.push(...[...n.children].reverse());
-    }
-    if (results.length == 0) {
-      message.success(`没有搜索到节点`);
-      return;
-    }
-    message.success(`搜索到 ${results.length} 个节点`);
-    selectorResults.unshift({
-      selector: text,
-      nodes: results,
-      key: Date.now(),
-    });
+  const newNode = newResult.nodes[0];
+  if (!Array.isArray(newNode)) {
+    props.onUpdateFocusNode(newNode);
+  } else if (typeof newResult.selector == 'object' && Array.isArray(newNode)) {
+    props.onUpdateFocusNode(newNode[newResult.selector.trackIndex]);
   }
   const allKeys = new Set(selectorResults.map((s) => s.key));
   const newKeys = expandedKeys.value.filter((k) => allKeys.has(k));
-  newKeys.push(selectorResults[0].key);
+  newKeys.push(newResult.key);
   expandedKeys.value = newKeys;
+};
+const searchBySelector = errorTry(() => {
+  const text = selectorText.value.trim();
+  if (!text) return;
+  if (enableSearchBySelector.value) {
+    if (!searchSelector(text)) return;
+  } else {
+    if (!searchString(text)) return;
+  }
+  refreshExpandedKeys();
 });
+
+onMounted(async () => {
+  await wasmLoadTask;
+  let count = 0;
+  if (route.query.gkd) {
+    count += searchSelector(base64url.decode(route.query.gkd as string)) || 0;
+  }
+  if (route.query.str) {
+    count += searchString(route.query.str as string) || 0;
+  }
+  if (count > 0) {
+    refreshExpandedKeys();
+  }
+});
+
 const generateRules = errorTry(
   async (result: { key: number; selector: Selector; nodes: RawNode[][] }) => {
     let jpgUrl = githubJpgStorage[props.snapshot.id];
@@ -172,24 +202,38 @@ const generateRules = errorTry(
   },
 );
 const enableSearchBySelector = shallowRef(true);
-const _1vw = window.innerWidth / 100;
+const hasZipId = computed(() => {
+  return githubZipStorage[props.snapshot.id];
+});
+const shareResult = (result: SearchResult) => {
+  if (!hasZipId.value) return;
+  const importUrl = new URL(
+    githubUrlToSelfUrl(router, githubZipStorage[props.snapshot.id]),
+  );
+  if (typeof result.selector == 'object') {
+    importUrl.searchParams.set(
+      'gkd',
+      base64url.encode(result.selector.toString()),
+    );
+  } else {
+    importUrl.searchParams.set('str', result.selector.toString());
+  }
+  copy(importUrl.toString());
+};
 </script>
 <template>
   <DraggableCard
-    :initialValue="{ top: 75, right: Math.max(315, 12 * _1vw + 135) }"
+    :initialValue="{
+      top: 75,
+      right: Math.max(315, 12 * vw + 135),
+      width: Math.max(480, gkdWidth * 0.3),
+    }"
+    :minWidth="300"
+    sizeDraggable
     v-slot="{ onRef }"
     class="z-1 box-shadow-dim"
   >
-    <div
-      w-480px
-      bg-white
-      b-1px
-      b-solid
-      b-gray-200
-      rounded-4px
-      p-8px
-      class="min-w-[calc(var(--gkd-width)*0.3)]"
-    >
+    <div bg-white b-1px b-solid b-gray-200 rounded-4px p-8px>
       <div flex m-b-4px>
         <NRadioGroup v-model:value="enableSearchBySelector">
           <NSpace>
@@ -268,7 +312,33 @@ const _1vw = window.innerWidth / 100;
                 </NIcon>
               </template>
             </NButton>
-            <div p-l-8px></div>
+            <div p-l-4px></div>
+            <NButton
+              v-if="hasZipId"
+              size="small"
+              :title="
+                typeof result.selector == 'object'
+                  ? `复制查询链接`
+                  : `复制搜索链接`
+              "
+              @click.stop="shareResult(result)"
+            >
+              <template #icon>
+                <NIcon>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    xmlns:xlink="http://www.w3.org/1999/xlink"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81c1.66 0 3-1.34 3-3s-1.34-3-3-3s-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65c0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"
+                      fill="currentColor"
+                    ></path>
+                  </svg>
+                </NIcon>
+              </template>
+            </NButton>
+            <div p-l-4px></div>
             <NButton
               size="small"
               @click.stop="selectorResults.splice(index, 1)"
